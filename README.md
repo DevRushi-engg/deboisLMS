@@ -48,6 +48,7 @@ Anything needing a secret runs server-side. Deploy each with
 | `match-name` | Gemini fuzzy name matching for attendance | `GEMINI_API_KEY` |
 | `send-credentials` | Emails a student their portal login, one or a whole import | `RESEND_API_KEY` |
 | `send-document` | Emails a shared offer letter or certificate | `RESEND_API_KEY`, `CREDENTIALS_FROM_EMAIL` |
+| `verify` | Public badge check for the office website | `VERIFY_API_KEY`, `SECRET_SERVICE_ROLE_KEY` |
 
 ```bash
 supabase secrets set SECRET_SERVICE_ROLE_KEY=... --project-ref <ref>
@@ -78,6 +79,49 @@ supabase secrets set ALLOWED_ORIGINS=https://lms.deboistech.in --project-ref <re
 Without `GEMINI_API_KEY`, attendance still works — it falls back to deterministic name matching and
 flags the rest for manual review.
 
+### Badge verification (for the office website)
+
+`verify` lets the office site check a badge ref, server to server. Run `supabase/migration_2026_10_13.sql` once (it is also in `schema.sql`), then:
+
+```bash
+supabase secrets set VERIFY_API_KEY=<long random string> --project-ref <ref>
+supabase functions deploy verify --no-verify-jwt --project-ref <ref>
+```
+
+`--no-verify-jwt` is required: the caller has no Supabase login, it proves itself with `x-api-key`. The function reuses `SECRET_SERVICE_ROLE_KEY`. It sends no CORS headers; call it from the office site's server, never from a browser.
+
+**Request:** `POST https://<ref>.supabase.co/functions/v1/verify`
+
+| Header | |
+|---|---|
+| `x-api-key` | Must equal `VERIFY_API_KEY`. Missing or wrong: `401` |
+| `x-client-ip` | The visitor's IP, for the lockout. Read only when the key is right. Missing or not an IP: counted under one shared `unknown` bucket |
+| `Content-Type` | `application/json`, body `{ "ref": "DBTPHR-260012-1A3BC" }` |
+
+**Response, found:** `200`, `Cache-Control: no-store`
+
+```json
+{ "docType": "badge", "status": "valid", "issueDate": "2026-10-01", "holderName": "Asha B." }
+```
+
+`status` is `valid` while the student holds the badge and `revoked` after it was taken back. `issueDate` is the day it was awarded (Indian time); for a revoked badge, the day its ref was first made. `holderName` is first name plus last initial. Students in test batches never match.
+
+**Response, anything else:** `404` with `{ "error": "not_found" }`, the same for an unknown ref, a malformed ref, a bad body, a wrong method and a blocked IP. Every answer takes at least 250 ms.
+
+**Lockout:** per IP, 10 misses or 60 lookups in 15 minutes block that IP for an hour. A blocked IP gets the same `404` for every ref. A malformed request counts as a miss. Rows in `verify_blocks` clear themselves.
+
+**Log:** each failure is one JSON line in the function logs (Supabase dashboard, Edge Functions, verify): time, IP and the ref as typed, cleaned to letters, digits and hyphens and cut at 60 characters.
+
+**Rotate the key** with no downtime:
+
+1. Move the live key aside: `supabase secrets set VERIFY_API_KEY_PREVIOUS=<old key> VERIFY_API_KEY=<new key> --project-ref <ref>`
+2. Put the new key in the office site's environment and redeploy it.
+3. Remove the old one: `supabase secrets unset VERIFY_API_KEY_PREVIOUS --project-ref <ref>`
+
+Secrets are read when the function starts, so redeploy `verify` after changing them.
+
+`npm test` runs the checks for it.
+
 ## Commands
 
 ```bash
@@ -85,9 +129,8 @@ npm run dev       # dev server
 npm run build     # tsc -b && vite build (type-checks before bundling)
 npm run preview   # preview the production build
 npm run lint      # eslint
+npm test          # node --test: the verify endpoint and its Postgres lockout
 ```
-
-There is no test runner configured yet.
 
 ## How the main pieces work
 

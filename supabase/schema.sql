@@ -3907,3 +3907,87 @@ $$;
 
 revoke all on function badges_to_award() from public, anon;
 grant execute on function badges_to_award() to authenticated;
+
+
+-- 24. BADGE VERIFICATION
+-- The public check behind the office site: is this badge ref real, and is it still held. Called only by
+-- the verify edge function with the service role. verify_blocks is the per-IP lockout store.
+create table if not exists verify_blocks (
+  ip            text primary key,
+  failures      int not null default 0,
+  lookups       int not null default 0,
+  window_start  timestamptz not null default now(),
+  blocked_until timestamptz
+);
+
+-- No policies at all: only the service role gets through
+alter table verify_blocks enable row level security;
+revoke all on verify_blocks from anon, authenticated;
+
+-- One call does the block check, the lookup and the counting, so two requests cannot both slip under a limit.
+-- 10 misses or 60 lookups inside a 15 minute window block the IP for an hour; a blocked IP gets nothing back.
+-- ponytail: fixed window, not sliding; a sliding one needs a row per attempt.
+create or replace function verify_badge(p_ref text, p_ip text)
+returns table (status text, issue_date date, holder_name text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec       verify_blocks%rowtype;
+  hit       record;
+  hit_found boolean;
+begin
+  -- Rows with nothing left to remember
+  delete from verify_blocks
+  where window_start < now() - interval '15 minutes' and coalesce(blocked_until, '-infinity') < now();
+
+  insert into verify_blocks (ip) values (p_ip) on conflict (ip) do nothing;
+  select * into rec from verify_blocks where ip = p_ip for update;
+
+  if rec.blocked_until > now() then
+    return;
+  end if;
+
+  -- A new window once the last one ran out, or the block ended
+  if rec.window_start < now() - interval '15 minutes' or rec.blocked_until is not null then
+    rec.failures := 0;
+    rec.lookups := 0;
+    rec.window_start := now();
+    rec.blocked_until := null;
+  end if;
+
+  -- A null ref (input that failed validation) is a miss that costs the same as a real one
+  select
+    case when sb.id is null then 'revoked' else 'valid' end as status,
+    (coalesce(sb.issued_at, bc.created_at) at time zone 'Asia/Kolkata')::date as issue_date,
+    case
+      when btrim(s.name) ~ '\s' then split_part(btrim(s.name), ' ', 1) || ' ' || upper(left(regexp_replace(btrim(s.name), '^.*\s', ''), 1)) || '.'
+      else btrim(s.name)
+    end as holder_name
+  into hit
+  from badge_codes bc
+  join students s on s.id = bc.student_id
+  left join student_badges sb on sb.student_id = bc.student_id and sb.badge_id = bc.badge_id
+  where p_ref is not null and bc.code = p_ref and not s.is_test;
+  hit_found := found;
+
+  rec.lookups := rec.lookups + 1;
+  if not hit_found then
+    rec.failures := rec.failures + 1;
+  end if;
+  if rec.failures >= 10 or rec.lookups >= 60 then
+    rec.blocked_until := now() + interval '1 hour';
+  end if;
+
+  update verify_blocks
+  set failures = rec.failures, lookups = rec.lookups, window_start = rec.window_start, blocked_until = rec.blocked_until
+  where ip = p_ip;
+
+  if hit_found then
+    return query select hit.status, hit.issue_date, hit.holder_name;
+  end if;
+end $$;
+
+revoke all on function verify_badge(text, text) from public, anon, authenticated;
+grant execute on function verify_badge(text, text) to service_role;
