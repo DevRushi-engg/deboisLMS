@@ -3909,9 +3909,9 @@ revoke all on function badges_to_award() from public, anon;
 grant execute on function badges_to_award() to authenticated;
 
 
--- 24. BADGE VERIFICATION
--- The public check behind the office site: is this badge ref real, and is it still held. Called only by
--- the verify edge function with the service role. verify_blocks is the per-IP lockout store.
+-- 24. DOCUMENT VERIFICATION
+-- The public check behind the office site: is this badge, certificate or offer letter real. Called only by the
+-- verify edge function with the service role. verify_blocks is the per-IP lockout store.
 create table if not exists verify_blocks (
   ip            text primary key,
   failures      int not null default 0,
@@ -3924,11 +3924,17 @@ create table if not exists verify_blocks (
 alter table verify_blocks enable row level security;
 revoke all on verify_blocks from anon, authenticated;
 
+-- Replaced by verify_document
+drop function if exists verify_badge(text, text);
+
 -- One call does the block check, the lookup and the counting, so two requests cannot both slip under a limit.
 -- 10 misses or 60 lookups inside a 15 minute window block the IP for an hour; a blocked IP gets nothing back.
+-- A badge is looked up by its code and can be taken back (revoked). A certificate or offer letter is looked up by the
+-- student's ID; it counts once it was ever shared, and the row alone is enough, so it still verifies after the 90-day
+-- clean-up removed the file. Never revoked.
 -- ponytail: fixed window, not sliding; a sliding one needs a row per attempt.
-create or replace function verify_badge(p_ref text, p_ip text)
-returns table (status text, issue_date date, holder_name text)
+create or replace function verify_document(p_ref text, p_doc_type text, p_ip text)
+returns table (doc_type text, status text, holder_name text, issue_date date, doc_name text, image_path text)
 language plpgsql
 security definer
 set search_path = public
@@ -3936,7 +3942,7 @@ as $$
 declare
   rec       verify_blocks%rowtype;
   hit       record;
-  hit_found boolean;
+  hit_found boolean := false;
 begin
   -- Rows with nothing left to remember
   delete from verify_blocks
@@ -3957,20 +3963,38 @@ begin
     rec.blocked_until := null;
   end if;
 
-  -- A null ref (input that failed validation) is a miss that costs the same as a real one
-  select
-    case when sb.id is null then 'revoked' else 'valid' end as status,
-    (coalesce(sb.issued_at, bc.created_at) at time zone 'Asia/Kolkata')::date as issue_date,
-    case
-      when btrim(s.name) ~ '\s' then split_part(btrim(s.name), ' ', 1) || ' ' || upper(left(regexp_replace(btrim(s.name), '^.*\s', ''), 1)) || '.'
-      else btrim(s.name)
-    end as holder_name
-  into hit
-  from badge_codes bc
-  join students s on s.id = bc.student_id
-  left join student_badges sb on sb.student_id = bc.student_id and sb.badge_id = bc.badge_id
-  where p_ref is not null and bc.code = p_ref and not s.is_test;
-  hit_found := found;
+  -- A null ref or type (input that failed validation) is a miss that costs the same as a real one
+  if p_ref is not null and p_doc_type = 'badge' then
+    select
+      'badge'::text as doc_type,
+      case when sb.id is null then 'revoked' else 'valid' end as status,
+      regexp_replace(btrim(s.name), '\s+', ' ', 'g') as holder_name,
+      (coalesce(sb.issued_at, bc.created_at) at time zone 'Asia/Kolkata')::date as issue_date,
+      bb.name as doc_name,
+      bb.image_path as image_path
+    into hit
+    from badge_codes bc
+    join students s on s.id = bc.student_id
+    join batch_badges bb on bb.id = bc.badge_id
+    left join student_badges sb on sb.student_id = bc.student_id and sb.badge_id = bc.badge_id
+    where bc.code = p_ref and not s.is_test;
+    hit_found := found;
+  elsif p_ref is not null and p_doc_type in ('certificate', 'offer_letter') then
+    select
+      p_doc_type as doc_type,
+      'valid'::text as status,
+      regexp_replace(btrim(s.name), '\s+', ' ', 'g') as holder_name,
+      (max(case p_doc_type when 'certificate' then m.cert_shared_at else m.offer_letter_shared_at end) at time zone 'Asia/Kolkata')::date as issue_date,
+      case p_doc_type when 'certificate' then 'Internship Completion Certificate' else 'Offer of Internship' end as doc_name,
+      null::text as image_path
+    into hit
+    from students s
+    join batch_student_mapping m on m.student_id = s.id
+    where s.student_code = p_ref and not s.is_test
+      and (case p_doc_type when 'certificate' then m.cert_shared_at else m.offer_letter_shared_at end) is not null
+    group by s.id, s.name;
+    hit_found := found;
+  end if;
 
   rec.lookups := rec.lookups + 1;
   if not hit_found then
@@ -3985,9 +4009,9 @@ begin
   where ip = p_ip;
 
   if hit_found then
-    return query select hit.status, hit.issue_date, hit.holder_name;
+    return query select hit.doc_type, hit.status, hit.holder_name, hit.issue_date, hit.doc_name, hit.image_path;
   end if;
 end $$;
 
-revoke all on function verify_badge(text, text) from public, anon, authenticated;
-grant execute on function verify_badge(text, text) to service_role;
+revoke all on function verify_document(text, text, text) from public, anon, authenticated;
+grant execute on function verify_document(text, text, text) to service_role;

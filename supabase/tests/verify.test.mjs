@@ -1,4 +1,4 @@
-// Run: npm test. Loads schema.sql into an in-memory Postgres and exercises verify_badge.
+// Run: npm test. Loads schema.sql into an in-memory Postgres and exercises verify_document.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -6,7 +6,8 @@ import { PGlite } from '@electric-sql/pglite';
 
 const db = new PGlite();
 const rows = async (sql) => (await db.query(sql)).rows;
-const check = (ref, ip = '1.1.1.1') => rows(`select * from verify_badge(${ref === null ? 'null' : `'${ref}'`}, '${ip}')`);
+const check = (ref, ip = '1.1.1.1', type = 'badge') =>
+  rows(`select * from verify_document(${ref === null ? 'null' : `'${ref}'`}, ${type === null ? 'null' : `'${type}'`}, '${ip}')`);
 const block = (ip) => rows(`select * from verify_blocks where ip = '${ip}'`).then((r) => r[0]);
 
 const BATCH = 'b0000000-0000-0000-0000-0000000000b1';
@@ -50,15 +51,17 @@ after(() => db.close());
 
 const reset = () => db.exec(`delete from verify_blocks`);
 
-test('a held badge: valid, first name and last initial, Indian-time date', async () => {
+test('a held badge: valid, full name tidied, its name and art, Indian-time date', async () => {
   await reset();
   assert.match(asha, /^DBTPHR-260012-[A-Z0-9]{5}$/);
   const [hit, ...more] = await check(asha);
   assert.equal(more.length, 0);
-  assert.deepEqual(Object.keys(hit), ['status', 'issue_date', 'holder_name']);
+  assert.deepEqual(Object.keys(hit), ['doc_type', 'status', 'holder_name', 'issue_date', 'doc_name', 'image_path']);
+  assert.equal(hit.doc_type, 'badge');
   assert.equal(hit.status, 'valid');
-  assert.equal(hit.holder_name, 'Asha B.');
-  assert.ok(hit.issue_date instanceof Date || typeof hit.issue_date === 'string');
+  assert.equal(hit.holder_name, 'Asha Bankar');
+  assert.equal(hit.doc_name, 'Docker Pro');
+  assert.equal(hit.image_path, 'p/1.png');
 });
 
 test('a single name stays as it is', async () => {
@@ -82,6 +85,73 @@ test('unknown refs, null and a test student give nothing', async () => {
   assert.equal((await check(null)).length, 0);
   const tester = (await rows(`select code from badge_codes where student_id = '${TESTER}'`))[0].code;
   assert.equal((await check(tester)).length, 0);
+});
+
+const STUDENT = 'DBT-INT-2026-012';
+const BATCH2 = 'b0000000-0000-0000-0000-0000000000b2';
+const shareDate = (kind, batch, when) =>
+  db.exec(`update batch_student_mapping set ${kind}_shared_at = ${when}, ${kind}_shared = true where student_id = '${ASHA}' and batch_id = '${batch}'`);
+
+test('a certificate counts once it was shared; before that it is a miss', async () => {
+  await reset();
+  await db.exec(`
+    insert into batches (id, name, program, start_date, base_fee, status, batch_code) values ('${BATCH2}', 'Second', 'TST', current_date - 5, 8000, 'ongoing', 'SEC');
+    insert into batch_student_mapping (batch_id, student_id) values ('${BATCH}', '${ASHA}'), ('${BATCH2}', '${ASHA}');
+  `);
+  assert.equal((await check(STUDENT, '1.1.1.1', 'certificate')).length, 0);
+  await shareDate('cert', BATCH, "'2026-10-02 12:00+05:30'");
+  const [hit, ...more] = await check(STUDENT, '1.1.1.1', 'certificate');
+  assert.equal(more.length, 0);
+  assert.equal(hit.doc_type, 'certificate');
+  assert.equal(hit.status, 'valid');
+  assert.equal(hit.holder_name, 'Asha Bankar');
+  assert.equal(hit.doc_name, 'Internship Completion Certificate');
+  assert.equal(hit.image_path, null);
+  assert.equal(new Date(hit.issue_date).getUTCDate(), 2);
+});
+
+test('the type decides which document: a shared certificate is not an offer letter', async () => {
+  await reset();
+  assert.equal((await check(STUDENT, '1.1.1.1', 'offer_letter')).length, 0);
+  await shareDate('offer_letter', BATCH, "'2026-09-01 12:00+05:30'");
+  const [hit] = await check(STUDENT, '1.1.1.1', 'offer_letter');
+  assert.equal(hit.doc_type, 'offer_letter');
+  assert.equal(hit.doc_name, 'Offer of Internship');
+});
+
+test('with two batches the latest share date is the issue date', async () => {
+  await reset();
+  await shareDate('cert', BATCH2, "'2026-10-09 12:00+05:30'");
+  assert.equal(new Date((await check(STUDENT, '1.1.1.1', 'certificate'))[0].issue_date).getUTCDate(), 9);
+});
+
+test('unsharing, deleting the file and the 90-day clean-up never revoke it: the row is enough', async () => {
+  await reset();
+  await db.exec(`
+    update batch_student_mapping
+    set cert_shared = false, cert_path = null, offer_letter_shared = false, offer_letter_path = null, status = 'archived'
+    where student_id = '${ASHA}'
+  `);
+  assert.equal((await check(STUDENT, '1.1.1.1', 'certificate'))[0].status, 'valid');
+  assert.equal((await check(STUDENT, '1.1.1.1', 'offer_letter'))[0].status, 'valid');
+});
+
+test('refs and types that do not belong together are misses', async () => {
+  await reset();
+  assert.equal((await check(STUDENT, '1.1.1.1', 'badge')).length, 0);
+  assert.equal((await check(asha, '1.1.1.1', 'certificate')).length, 0);
+  assert.equal((await check(STUDENT, '1.1.1.1', null)).length, 0);
+  assert.equal((await check(STUDENT, '1.1.1.1', 'passport')).length, 0);
+  assert.equal((await check('DBT-INT-2026-777', '1.1.1.1', 'certificate')).length, 0);
+});
+
+test('a test student is never found as a document either', async () => {
+  await reset();
+  await db.exec(`
+    insert into batch_student_mapping (batch_id, student_id) values ('${BATCH}', '${TESTER}');
+    update batch_student_mapping set cert_shared_at = now() where student_id = '${TESTER}';
+  `);
+  assert.equal((await check('DBT-INT-2026-014', '1.1.1.1', 'certificate')).length, 0);
 });
 
 test('ten misses block the IP for an hour, a valid ref included; other IPs are untouched', async () => {
@@ -138,11 +208,11 @@ test('only the service role can call it or read the store', async () => {
   await db.exec(`reset role`);
   for (const role of ['anon', 'authenticated']) {
     await db.exec(`set role ${role}`);
-    await assert.rejects(() => db.query(`select * from verify_badge('${asha}', '1.1.1.1')`), /permission denied/);
+    await assert.rejects(() => db.query(`select * from verify_document('${asha}', 'badge', '1.1.1.1')`), /permission denied/);
     await assert.rejects(() => db.query(`select * from verify_blocks`), /permission denied/);
     await db.exec(`reset role`);
   }
   await db.exec(`set role service_role`);
-  assert.equal((await db.query(`select * from verify_badge('${asha}', '1.1.1.1')`)).rows.length, 1);
+  assert.equal((await db.query(`select * from verify_document('${asha}', 'badge', '1.1.1.1')`)).rows.length, 1);
   await db.exec(`reset role`);
 });

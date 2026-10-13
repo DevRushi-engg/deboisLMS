@@ -48,7 +48,7 @@ Anything needing a secret runs server-side. Deploy each with
 | `match-name` | Gemini fuzzy name matching for attendance | `GEMINI_API_KEY` |
 | `send-credentials` | Emails a student their portal login, one or a whole import | `RESEND_API_KEY` |
 | `send-document` | Emails a shared offer letter or certificate | `RESEND_API_KEY`, `CREDENTIALS_FROM_EMAIL` |
-| `verify` | Public badge check for the office website | `VERIFY_API_KEY`, `SECRET_SERVICE_ROLE_KEY` |
+| `verify` | Public badge, certificate and offer letter check for the office website | `VERIFY_API_KEY`, `SECRET_SERVICE_ROLE_KEY` |
 
 ```bash
 supabase secrets set SECRET_SERVICE_ROLE_KEY=... --project-ref <ref>
@@ -79,9 +79,9 @@ supabase secrets set ALLOWED_ORIGINS=https://lms.deboistech.in --project-ref <re
 Without `GEMINI_API_KEY`, attendance still works — it falls back to deterministic name matching and
 flags the rest for manual review.
 
-### Badge verification (for the office website)
+### Document verification (for the office website)
 
-`verify` lets the office site check a badge ref, server to server. Run `supabase/migration_2026_10_13.sql` once (it is also in `schema.sql`), then:
+`verify` lets the office site check a badge, a certificate or an offer letter, server to server. Run `supabase/migration_2026_10_13b.sql` once (it is also in `schema.sql`), then:
 
 ```bash
 supabase secrets set VERIFY_API_KEY=<long random string> --project-ref <ref>
@@ -96,17 +96,32 @@ supabase functions deploy verify --no-verify-jwt --project-ref <ref>
 |---|---|
 | `x-api-key` | Must equal `VERIFY_API_KEY`. Missing or wrong: `401` |
 | `x-client-ip` | The visitor's IP, for the lockout. Read only when the key is right. Missing or not an IP: counted under one shared `unknown` bucket |
-| `Content-Type` | `application/json`, body `{ "ref": "DBTPHR-260012-1A3BC" }` |
+| `Content-Type` | `application/json` |
+
+Body `{ "ref": "...", "docType": "..." }`:
+
+| What | `ref` format | `docType` |
+|---|---|---|
+| Badge | `DBT<batch code>-<YY><number>-<5 letters or digits>`, e.g. `DBTPHR-260012-1A3BC` | `badge`, or leave it out |
+| Internship completion certificate | The student's ID, `DBT-INT-<year>-<number>`, e.g. `DBT-INT-2026-012` | `certificate` (required) |
+| Offer letter | The same student's ID | `offer_letter` (required) |
+
+A student's certificate and offer letter share one ref, so the type must be sent. The ref is trimmed and uppercased; the type is trimmed and lowercased.
 
 **Response, found:** `200`, `Cache-Control: no-store`
 
 ```json
-{ "docType": "badge", "status": "valid", "issueDate": "2026-10-01", "holderName": "Asha B." }
+{ "docType": "certificate", "status": "valid", "holderName": "Asha Bankar", "issueDate": "2026-10-02", "badgeName": "Internship Completion Certificate" }
 ```
 
-`status` is `valid` while the student holds the badge and `revoked` after it was taken back. `issueDate` is the day it was awarded (Indian time); for a revoked badge, the day its ref was first made. `holderName` is first name plus last initial. Students in test batches never match.
+A badge reply also carries `"badgeImageUrl": "https://.../storage/v1/object/public/assets/badges/..."` (a public URL; omitted when there is none). Certificates and offer letters have no image. There is no `expiryDate`: none of the three has an end date stored. Nothing else is ever sent.
 
-**Response, anything else:** `404` with `{ "error": "not_found" }`, the same for an unknown ref, a malformed ref, a bad body, a wrong method and a blocked IP. Every answer takes at least 250 ms.
+- **Badge:** `valid` while the student holds it, `revoked` after it was taken back (re-awarding makes it valid again under the same ref). `issueDate` is the day it was awarded; `badgeName` is the badge's name.
+- **Certificate and offer letter:** found once the document was shared with the student at least once, and the row alone counts, so it still verifies after the 90-day clean-up deleted the file. It is never revoked: unsharing, deleting or archiving does not change the answer. `issueDate` is the day it was first shared (the latest, if the student has several batches). `badgeName` is "Internship Completion Certificate" or "Offer of Internship".
+- `holderName` is the student's full name. Certificate refs are sequential, so anyone who can call this API can step through them; the only brakes are the lockout below and keeping the key private.
+- Students in test batches never match.
+
+**Response, anything else:** `404` with `{ "error": "not_found" }`, the same for an unknown ref, a ref that does not fit the type, a missing type on a student ID, a bad body, a wrong method and a blocked IP. Every answer takes at least 250 ms.
 
 **Lockout:** per IP, 10 misses or 60 lookups in 15 minutes block that IP for an hour. A blocked IP gets the same `404` for every ref. A malformed request counts as a miss. Rows in `verify_blocks` clear themselves.
 
@@ -129,7 +144,7 @@ npm run dev       # dev server
 npm run build     # tsc -b && vite build (type-checks before bundling)
 npm run preview   # preview the production build
 npm run lint      # eslint
-npm test          # node --test: the verify endpoint and its Postgres lockout
+npm test          # node --test: the verify endpoint and its Postgres lookup and lockout
 ```
 
 ## How the main pieces work
