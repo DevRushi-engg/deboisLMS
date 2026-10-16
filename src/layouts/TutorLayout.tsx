@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, ClipboardCheck, FileText, BookOpen, LibraryBig, ClipboardList } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import { Sidebar } from '@/components/layout/Sidebar';
+import LMSAssistant from '@/components/assistant/LMSAssistant';
 
 const TUTOR_NAV_ITEMS = [
   { label: 'Dashboard', to: '/tutor', icon: LayoutDashboard, end: true },
@@ -56,6 +57,7 @@ export default function TutorLayout() {
           <Outlet />
         </main>
       </div>
+      <LMSAssistant />
     </div>
   );
 }
