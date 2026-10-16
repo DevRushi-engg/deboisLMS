@@ -88,6 +88,7 @@
 }
 
 .lms-assistant-brand-fallback {
+  display: none;
   position: absolute;
   color: var(--assistant-green-bright);
 }
@@ -215,6 +216,11 @@
   filter: drop-shadow(0 7px 10px rgba(0, 0, 0, 0.35)) drop-shadow(0 0 13px rgba(45, 212, 119, 0.12));
   animation: lms-assistant-mascot-float 4.2s ease-in-out infinite;
   transform-style: preserve-3d;
+}
+
+.lms-assistant-welcome-mascot.is-thinking img {
+  animation: lms-assistant-mascot-thinking 1.8s ease-in-out infinite;
+  filter: drop-shadow(0 7px 10px rgba(0, 0, 0, 0.35)) drop-shadow(0 0 18px rgba(45, 212, 119, 0.34));
 }
 
 .lms-assistant-chat-orb {
@@ -406,6 +412,10 @@
   justify-content: flex-end;
 }
 
+.lms-assistant-message-row.is-response-ready .lms-assistant-message-avatar {
+  animation: lms-assistant-response-pulse 850ms ease-out 1;
+}
+
 .lms-assistant-message-avatar {
   position: relative;
   display: grid;
@@ -422,10 +432,15 @@
 
 .lms-assistant-message-avatar img {
   position: absolute;
+  z-index: 1;
   width: 100%;
   height: 100%;
   padding: 2px;
   object-fit: contain;
+}
+
+.lms-assistant-message-avatar > svg {
+  display: none;
 }
 
 .lms-assistant-message {
@@ -683,6 +698,7 @@
 }
 
 .lms-assistant-launcher-fallback {
+  display: none;
   position: absolute;
   color: #76f5a2;
 }
@@ -704,10 +720,10 @@
   background: #102017;
 }
 
-.lms-assistant-launcher.is-open img,
-.lms-assistant-launcher.is-open .lms-assistant-launcher-fallback {
-  display: none;
+.lms-assistant-launcher-close-icon {
+  color: #d8f9e4;
 }
+
 
 .lms-assistant-launcher-status {
   position: absolute;
@@ -768,6 +784,17 @@
 @keyframes lms-assistant-message-in {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lms-assistant-response-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(77, 236, 135, 0); transform: scale(1); }
+  35% { box-shadow: 0 0 0 7px rgba(77, 236, 135, 0.14), 0 0 19px rgba(77, 236, 135, 0.2); transform: scale(1.05); }
+  100% { box-shadow: 0 0 0 12px rgba(77, 236, 135, 0), transform: scale(1); }
+}
+
+@keyframes lms-assistant-mascot-thinking {
+  0%, 100% { transform: translateY(0) rotateY(0); }
+  50% { transform: translateY(-3px) rotateY(-5deg); }
 }
 
 @keyframes lms-assistant-mascot-float {
@@ -842,6 +869,7 @@
   .lms-assistant-panel,
   .lms-assistant-message-row,
   .lms-assistant-welcome-mascot img,
+  .lms-assistant-message-row.is-response-ready .lms-assistant-message-avatar,
   .lms-assistant-chat-orb,
   .lms-assistant-chat-orb span,
   .lms-assistant-launcher,
