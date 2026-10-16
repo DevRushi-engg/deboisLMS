@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Navbar } from '@/components/layout/Navbar';
 import { Sidebar } from '@/components/layout/Sidebar';
+import LMSAssistant from '@/components/assistant/LMSAssistant';
 
 export default function DashboardLayout() {
   const { pathname } = useLocation();
@@ -41,6 +42,7 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      <LMSAssistant />
     </div>
   );
 }
