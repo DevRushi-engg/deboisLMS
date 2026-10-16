@@ -142,11 +142,11 @@ async function buildAccountContext(
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    const completionByAssignment = new Map(
+    const completionByAssignment = new Map<string, { submitted: boolean; submittedAt: string | null }>(
       (completionResult.data ?? []).map((row: { assignment_id: string; submitted: boolean; submitted_at: string | null }) => [
         row.assignment_id,
         { submitted: row.submitted, submittedAt: row.submitted_at },
-      ]),
+      ] as const),
     );
 
     return JSON.stringify({
@@ -170,7 +170,9 @@ async function buildAccountContext(
         : (assignmentResult.data ?? []).map((row: { id: string; title: string; due_at: string | null }) => ({
           title: row.title,
           dueAt: row.due_at,
-          submission: completionByAssignment.get(row.id) ?? { submitted: false, submittedAt: null },
+          submission: completionResult.error
+            ? 'Unavailable'
+            : completionByAssignment.get(row.id) ?? { submitted: false, submittedAt: null },
         })),
       studyMaterials: materialResult.error
         ? 'Unavailable'
