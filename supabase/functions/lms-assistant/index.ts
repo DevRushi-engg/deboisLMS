@@ -1,6 +1,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
+const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.8-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '')
   .split(/[\s,]+/)
