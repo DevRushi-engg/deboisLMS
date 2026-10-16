@@ -45,14 +45,14 @@ Anything needing a secret runs server-side. Deploy each with
 |---|---|---|
 | `create-student-login` | Creates/resets a student's portal login | `SECRET_SERVICE_ROLE_KEY` |
 | `create-tutor-login` | Creates/resets a tutor's dashboard login | `SECRET_SERVICE_ROLE_KEY` |
-| `match-name` | Gemini fuzzy name matching for attendance | `GEMINI_API_KEY` |
+| `match-name` | Gemini fuzzy name matching for attendance | `GEMINI_API_KEY` |\n| `lms-assistant` | Authenticated, role-aware LMS help using Gemini and caller-scoped RLS queries | `GEMINI_API_KEY` |
 | `send-credentials` | Emails a student their portal login, one or a whole import | `RESEND_API_KEY` |
 | `send-document` | Emails a shared offer letter or certificate | `RESEND_API_KEY`, `CREDENTIALS_FROM_EMAIL` |
 | `verify` | Public badge, certificate and offer letter check for the office website | `VERIFY_API_KEY`, `SECRET_SERVICE_ROLE_KEY` |
 
 ```bash
-supabase secrets set SECRET_SERVICE_ROLE_KEY=... --project-ref <ref>
-supabase secrets set GEMINI_API_KEY=...          --project-ref <ref>   # optional
+supabase functions deploy lms-assistant --project-ref <ref>\n\nsupabase secrets set SECRET_SERVICE_ROLE_KEY=... --project-ref <ref>
+supabase secrets set GEMINI_API_KEY=...          --project-ref <ref>   # optional\n# lms-assistant uses the same server-side secret
 
 # send-credentials. Refuses to send until all three are set, and names the missing one.
 supabase secrets set \
