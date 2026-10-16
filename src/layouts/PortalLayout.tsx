@@ -13,6 +13,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PortalBatchProvider, usePortalBatch } from '@/lib/context/PortalBatchContext';
 import { useNow } from '@/lib/hooks/useNow';
 import { formatDate } from '@/lib/utils/format';
+import LMSAssistant from '@/components/assistant/LMSAssistant';
 
 // Re-mounts when the page or the chosen batch changes, so every page loads that batch's data
 function PortalMain() {
@@ -147,6 +148,7 @@ export default function PortalLayout() {
       <PortalNav open={navOpen} onClose={() => setNavOpen(false)} />
 
       <PortalMain />
+      <LMSAssistant />
     </div>
     </PortalBatchProvider>
   );
