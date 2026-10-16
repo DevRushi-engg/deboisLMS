@@ -112,7 +112,7 @@ export default function LMSAssistant() {
   const requestIdRef = useRef(0);
 
   const role = user?.role ?? 'student';
-  const name = user?.full_name?.trim().split(/\s+/)[0] || (role === 'admin' ? 'there' : 'there');
+  const name = user?.full_name?.trim().split(/\s+/)[0] || 'there';
   const mascotSrc = '/favicon.png';
 
   useEffect(() => {
@@ -199,6 +199,7 @@ export default function LMSAssistant() {
     setMessage('');
     setError('');
     setSending(false);
+    setResponseReadyId(null);
   }
 
   function handleQuickPrompt(prompt: string) {
