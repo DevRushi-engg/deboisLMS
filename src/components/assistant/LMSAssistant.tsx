@@ -104,6 +104,7 @@ export default function LMSAssistant() {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [responseReadyId, setResponseReadyId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([INITIAL_MESSAGE]);
   const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -179,7 +180,9 @@ export default function LMSAssistant() {
         : undefined;
 
       if (requestId === requestIdRef.current) {
-        setMessages((current) => [...current, { id: createId(), role: 'assistant', text: answer, action }]);
+        const answerMessage: AssistantMessage = { id: createId(), role: 'assistant', text: answer, action };
+        setMessages((current) => [...current, answerMessage]);
+        setResponseReadyId(answerMessage.id);
       }
     } catch {
       if (requestId === requestIdRef.current) {
@@ -219,7 +222,7 @@ export default function LMSAssistant() {
           <header className="lms-assistant-header">
             <div className="lms-assistant-brand">
               <span className="lms-assistant-brand-mark">
-                <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; const fallback = event.currentTarget.nextElementSibling as HTMLElement | null; if (fallback) fallback.style.display = 'block'; }} />
                 <Sparkles className="lms-assistant-brand-fallback" size={20} aria-hidden="true" />
               </span>
               <div className="lms-assistant-heading">
@@ -241,7 +244,7 @@ export default function LMSAssistant() {
           </header>
 
           <div className="lms-assistant-welcome">
-            <div className="lms-assistant-welcome-mascot">
+            <div className={`lms-assistant-welcome-mascot ${sending ? 'is-thinking' : ''}`}>
               <img src={mascotSrc} alt="Deboistech green turtle mascot" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
               <span className="lms-assistant-chat-orb" aria-hidden="true"><span /><span /><span /></span>
             </div>
@@ -268,7 +271,7 @@ export default function LMSAssistant() {
           <div className="lms-assistant-conversation" aria-live="polite" aria-relevant="additions text">
             <div className="lms-assistant-conversation-label"><span>CONVERSATION</span><span className="lms-assistant-date-divider" /></div>
             {messages.map((item) => (
-              <div key={item.id} className={`lms-assistant-message-row is-${item.role}`}>
+              <div key={item.id} className={`lms-assistant-message-row is-${item.role} ${item.id === responseReadyId ? 'is-response-ready' : ''}`}>
                 {item.role === 'assistant' && (
                   <span className="lms-assistant-message-avatar">
                     <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
@@ -289,7 +292,7 @@ export default function LMSAssistant() {
             {sending && (
               <div className="lms-assistant-message-row is-assistant">
                 <span className="lms-assistant-message-avatar">
-                  <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                  <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; const fallback = event.currentTarget.nextElementSibling as HTMLElement | null; if (fallback) fallback.style.display = 'block'; }} />
                   <Sparkles size={14} aria-hidden="true" />
                 </span>
                 <div className="lms-assistant-thinking" role="status"><LoaderCircle size={15} className="lms-assistant-spinner" /> Thinking through your question<span className="lms-assistant-thinking-dots">...</span></div>
@@ -347,8 +350,14 @@ export default function LMSAssistant() {
         aria-controls={panelId}
       >
         <span className="lms-assistant-launcher-ring" aria-hidden="true" />
-        <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
-        <Sparkles className="lms-assistant-launcher-fallback" size={23} aria-hidden="true" />
+        {open ? (
+          <X className="lms-assistant-launcher-close-icon" size={23} aria-hidden="true" />
+        ) : (
+          <>
+            <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; const fallback = event.currentTarget.nextElementSibling as HTMLElement | null; if (fallback) fallback.style.display = 'block'; }} />
+            <Sparkles className="lms-assistant-launcher-fallback" size={23} aria-hidden="true" />
+          </>
+        )}
         <span className="lms-assistant-launcher-status" aria-hidden="true" />
       </button>
     </div>
