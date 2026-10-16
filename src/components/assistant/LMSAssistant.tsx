@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
+import './assistant.css';
 
 type AssistantMessage = {
   id: string;
@@ -78,6 +79,11 @@ function assistantRouteFor(role: string, topic: string) {
     if (target.includes('curriculum')) return '/tutor/curriculum';
     return '/tutor';
   }
+  if (target.includes('material')) return '/portal/materials';
+  if (target.includes('assignment')) return '/portal/assignments';
+  if (target.includes('attendance')) return '/portal/attendance';
+  if (target.includes('quiz') || target.includes('exam')) return '/portal/quizzes';
+  if (target.includes('curriculum')) return '/portal/curriculum';
   return ROUTES[target] ?? '/portal';
 }
 
