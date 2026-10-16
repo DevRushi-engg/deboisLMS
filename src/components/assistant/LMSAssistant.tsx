@@ -91,6 +91,7 @@ export default function LMSAssistant() {
   const { user, loading } = useAuth();
   const location = useLocation();
   const titleId = useId();
+  const panelId = useId();
   const inputId = useId();
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
@@ -105,7 +106,7 @@ export default function LMSAssistant() {
 
   const role = user?.role ?? 'student';
   const name = user?.full_name?.trim().split(/\s+/)[0] || (role === 'admin' ? 'there' : 'there');
-  const mascotSrc = '/deboistech-turtle-assistant.png';
+  const mascotSrc = '/favicon.png';
 
   useEffect(() => {
     if (!open || minimized) return;
@@ -174,7 +175,7 @@ export default function LMSAssistant() {
       if (requestId === requestIdRef.current) {
         setMessages((current) => [...current, { id: createId(), role: 'assistant', text: answer, action }]);
       }
-    } catch (caught) {
+    } catch {
       if (requestId === requestIdRef.current) {
         setError('The assistant could not respond. Please try again in a moment.');
       }
@@ -205,6 +206,7 @@ export default function LMSAssistant() {
           className="lms-assistant-panel"
           aria-labelledby={titleId}
           aria-label="Deboistech AI Assistant panel"
+          id={panelId}
           role="dialog"
           aria-modal="false"
         >
@@ -336,7 +338,7 @@ export default function LMSAssistant() {
         onClick={() => { setOpen((current) => !current); setMinimized(false); }}
         aria-label={open ? 'Close Deboistech Assistant' : 'Open Deboistech Assistant'}
         aria-expanded={open}
-        aria-controls={titleId}
+        aria-controls={panelId}
       >
         <span className="lms-assistant-launcher-ring" aria-hidden="true" />
         <img src={mascotSrc} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
