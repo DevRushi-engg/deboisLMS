@@ -159,8 +159,7 @@ export default function LMSAssistant() {
     const requestId = ++requestIdRef.current;
 
     try {
-      // The UI can run before the AI endpoint is deployed. Invoke only the
-      // authenticated Edge Function; never call Gemini directly from the browser.
+      // Invoke the authenticated Edge Function; never call Gemini directly from the browser.
       const { data, error: invokeError } = await supabase.functions.invoke('lms-assistant', {
         body: { message: text, history, pathname: location.pathname },
       });
